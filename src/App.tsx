@@ -15,6 +15,7 @@ const allLessons = (course?: Course) => course?.modules.flatMap((module) => modu
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role>('student');
+  const [availableRoles, setAvailableRoles] = useState<Role[]>(['student', 'teacher']);
   const [page, setPage] = useState<Page>('home');
   const [courses, setCourses] = useState<Course[]>(demoCourses);
   const [assignments, setAssignments] = useState<Assignment[]>(demoAssignments);
@@ -63,7 +64,9 @@ export default function App() {
       client.from('assignments').select('id, course_id, title, instructions, week_number, due_at, published, assignment_submissions(id, student_id, response, submission_url, status, feedback)').eq('published', true).order('week_number', { ascending: false }),
     ]);
     if (profile.data) setUser({ ...current, ...profile.data });
-    setRole(roles.data?.some((item) => item.role === 'teacher') ? 'teacher' : 'student');
+    const roleList = (roles.data ?? []).map((item) => item.role as Role);
+    setAvailableRoles(roleList);
+    setRole(roleList.includes('teacher') ? 'teacher' : 'student');
     const rows = [...(owned.data ?? []), ...(enrolled.data ?? []).map((item: any) => item.courses).filter(Boolean)] as any[];
     const unique = Array.from(new Map(rows.map((item) => [item.id, item])).values());
     const progressRows = await client.from('lesson_progress').select('lesson_id, completed').eq('student_id', current.id);
@@ -146,7 +149,6 @@ export default function App() {
     if (!demo && supabase && user) {
       const { data, error } = await supabase.from('courses').insert({ creator_id: user.id, title: formTitle.trim(), description: formDescription }).select('id').single();
       if (error) return notify(error.message);
-      await supabase.from('user_roles').upsert({ user_id: user.id, role: 'teacher' }, { onConflict: 'user_id,role', ignoreDuplicates: true });
       const next: Course = { id: data.id, title: formTitle, description: formDescription, modules: [], progress: 0 };
       setCourses((current) => [next, ...current]); setCourseId(next.id);
     } else {
@@ -241,7 +243,7 @@ export default function App() {
     closeModal();
   }
 
-  async function signOut() { await supabase?.auth.signOut(); setUser(null); setRole('student'); setPage('home'); }
+  async function signOut() { await supabase?.auth.signOut(); setUser(null); setRole('student'); setAvailableRoles(['student', 'teacher']); setPage('home'); }
 
   function openModal(kind: ModalKind, moduleId = '') {
     setFormTitle(''); setFormDescription(''); setFormUrl(''); setFormWeek('1'); setFormDue(''); setFormEmail(''); setLessonModule(moduleId); setModal(kind);
@@ -256,7 +258,7 @@ export default function App() {
         {([{ id: 'home', label: 'Overview', icon: LayoutDashboard }, { id: 'courses', label: 'Courses', icon: BookOpen }, { id: 'classroom', label: 'Classroom', icon: MessageCircle }, { id: 'tasks', label: 'Tasks', icon: ClipboardList }, { id: 'profile', label: 'Profile', icon: Settings }] as const).map(({ id, label, icon: Icon }) => <button key={id} className={page === id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(id)}><Icon size={17} /><span>{label}</span></button>)}
       </nav>
       <div className="sidebar-footer">
-        <div className="role-toggle"><button className={role === 'student' ? 'selected' : ''} onClick={() => setRole('student')}><GraduationCap size={14} /> Student</button><button className={role === 'teacher' ? 'selected' : ''} onClick={() => setRole('teacher')}><Users size={14} /> Creator</button></div>
+        <div className="role-toggle"><button className={role === 'student' ? 'selected' : ''} disabled={!demo && !availableRoles.includes('student')} onClick={() => setRole('student')}><GraduationCap size={14} /> Student</button><button className={role === 'teacher' ? 'selected' : ''} disabled={!demo && !availableRoles.includes('teacher')} title={!demo && !availableRoles.includes('teacher') ? 'Creator access has not been enabled for this account' : 'Switch to creator'} onClick={() => setRole('teacher')}><Users size={14} /> Creator</button></div>
         {user ? <button className="signout" onClick={signOut}><LogOut size={15} /> Sign out</button> : <button className="signout" onClick={() => setAuthMode('signin')}>Sign in</button>}
       </div>
     </aside>
