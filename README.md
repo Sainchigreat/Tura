@@ -54,3 +54,8 @@ Course creation is restricted to accounts with the teacher role. Do not add a se
 ## Invitations
 
 The app currently creates secure, expiring invitation links and can bind a link to an email address. Email delivery is not configured yet; connect an email provider/SMTP before expecting Tura to send invitation messages automatically.
+
+
+## Preview
+
+The repository includes a GitHub Pages workflow. In the repository settings, open **Pages** and set the build source to **GitHub Actions**. Every push to `main` then publishes the UI preview. The Pages build runs in demo mode so the screens can be reviewed without exposing or requiring backend credentials. Local development can connect to Supabase using `.env.local`.
