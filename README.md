@@ -35,3 +35,22 @@ The database schema and row-level security policies are in `supabase/migrations`
 ## Video embeds
 
 Creators paste a standard YouTube URL. Tura extracts the video ID and renders the standard YouTube embed URL. It does not call the YouTube Data API or upload video files.
+
+
+## First creator account
+
+New sign-ups receive the student role. To enable the first creator account, sign up and verify your email, then run this once in the Tura Supabase SQL Editor, replacing the email address:
+
+```sql
+insert into public.user_roles (user_id, role)
+select id, 'teacher'
+from auth.users
+where lower(email) = lower('you@example.com')
+on conflict (user_id, role) do nothing;
+```
+
+Course creation is restricted to accounts with the teacher role. Do not add a self-service role grant to the browser client.
+
+## Invitations
+
+The app currently creates secure, expiring invitation links and can bind a link to an email address. Email delivery is not configured yet; connect an email provider/SMTP before expecting Tura to send invitation messages automatically.
