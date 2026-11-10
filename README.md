@@ -10,7 +10,7 @@ Tura is a course workspace for creators and students. Course videos stay on YouT
 
 ## Local development
 
-1. Install Node.js 20 or later.
+1. Install Node.js 22.12 or later.
 2. Copy `.env.example` to `.env.local`.
 3. Run `npm install`.
 4. Run `npm run dev`.
