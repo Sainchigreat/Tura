@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { BookOpen, Check, CheckCircle2, ChevronDown, ClipboardList, GraduationCap, LayoutDashboard, LogOut, MessageCircle, Plus, Search, Send, Settings, Share2, Users, Video, X } from 'lucide-react';
 import { demoAssignments, demoCourses, demoMessages } from './lib/demo';
 import { getYouTubeEmbedUrl, getYouTubeId } from './lib/youtube';
-import { isSupabaseConfigured, supabase } from './lib/supabase';
+import { supabase } from './lib/supabase';
 import type { Assignment, ClassroomMessage, Course, Lesson, Page, Role } from './lib/types';
 
 type User = { id: string; email?: string; full_name?: string; avatar_url?: string | null };
