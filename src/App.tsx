@@ -1,304 +1,624 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
-import { BookOpen, Check, CheckCircle2, ChevronDown, ClipboardList, GraduationCap, LayoutDashboard, LogOut, MessageCircle, Plus, Search, Send, Settings, Share2, Users, Video, X } from 'lucide-react';
-import { demoAssignments, demoCourses, demoMessages } from './lib/demo';
-import { getYouTubeEmbedUrl, getYouTubeId } from './lib/youtube';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, ArrowRight, Loader2, LogIn, Sparkles } from 'lucide-react';
+import { AuthScreen } from './components/AuthScreen';
+import {
+  Catalog,
+  ClosingCta,
+  CreatorBand,
+  Hero,
+  HowItWorks,
+  PublicCourse,
+  SiteFooter,
+  SiteNav,
+  Ticker,
+} from './components/Site';
+import { initials } from './components/Shapes';
+import { Workspace } from './components/Workspace';
+import type { Page } from './components/Workspace';
+import {
+  acceptInvite,
+  becomeCreator,
+  createCourse,
+  createInvite,
+  createLesson,
+  createModule,
+  deleteLesson,
+  enrollByEmail,
+  fetchCatalog,
+  fetchCourseContent,
+  fetchCourseOutline,
+  fetchEnrolledCourseIds,
+  fetchInvitePreview,
+  fetchInvites,
+  fetchMyCourses,
+  fetchProfile,
+  fetchProgress,
+  fetchRoster,
+  isConfigured,
+  revokeEnrollment,
+  revokeInvite,
+  saveProgress,
+  signOut,
+  updateCourse,
+  updateCreatorProfile,
+} from './lib/data';
+import { authConfigured, clearAuthHash, readAuthError } from './lib/auth';
 import { supabase } from './lib/supabase';
-import type { Assignment, ClassroomMessage, Course, Lesson, Page, Role } from './lib/types';
+import type {
+  CatalogCourse,
+  Course,
+  CourseWithContent,
+  InvitePreview,
+  Lesson,
+  Profile,
+} from './lib/types';
 
-type User = { id: string; email?: string; full_name?: string; avatar_url?: string | null };
-type ModalKind = 'course' | 'module' | 'lesson' | 'task' | 'invite' | null;
-const initials = (value: string) => value.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'T';
-const dueLabel = (value?: string | null) => value ? new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short' }).format(new Date(value)) : 'No due date';
-const allLessons = (course?: Course) => course?.modules.flatMap((module) => module.lessons) ?? [];
+type Screen = 'site' | 'course' | 'auth' | 'workspace' | 'invite';
+
+const TICKER = [
+  'New: enrol students by email in one step',
+  'Lessons stream from YouTube — nothing to upload',
+  'Creator access is one click, no waitlist',
+  'Invitation links expire — revoke any time',
+];
+
+const INVITE_KEY = 'tura.pending-invite';
+
+function pathToPage(): Page | null {
+  const path = window.location.pathname.replace(/\/+$/, '');
+  if (path === '/courses') return 'courses';
+  if (path === '/students') return 'students';
+  if (path === '/profile') return 'profile';
+  if (path === '/workspace') return 'overview';
+  return null;
+}
+
+/** Read the invite from the URL, or from the last visit if the user bounced out to confirm their email. */
+function readInvite(): string | null {
+  const fromUrl = new URLSearchParams(window.location.search).get('invite');
+  if (fromUrl) {
+    window.sessionStorage.setItem(INVITE_KEY, fromUrl);
+    return fromUrl;
+  }
+  return window.sessionStorage.getItem(INVITE_KEY);
+}
+
+function clearInvite() {
+  window.sessionStorage.removeItem(INVITE_KEY);
+}
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<Role>('student');
-  const [availableRoles, setAvailableRoles] = useState<Role[]>(['student', 'teacher']);
-  const [page, setPage] = useState<Page>('home');
-  const [courses, setCourses] = useState<Course[]>(demoCourses);
-  const [assignments, setAssignments] = useState<Assignment[]>(demoAssignments);
-  const [messages, setMessages] = useState<ClassroomMessage[]>(demoMessages);
-  const [courseId, setCourseId] = useState('course-design-ai');
-  const [lessonId, setLessonId] = useState('lesson-3');
-  const [search, setSearch] = useState('');
-  const [modal, setModal] = useState<ModalKind>(null);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup' | null>(null);
-  const [toast, setToast] = useState('');
-  const [moduleOpen, setModuleOpen] = useState<Record<string, boolean>>({});
-  const [taskFilter, setTaskFilter] = useState('all');
-  const [selectedTask, setSelectedTask] = useState<string | null>(null);
-  const [reply, setReply] = useState('');
-  const [submitText, setSubmitText] = useState('');
-  const [submitUrl, setSubmitUrl] = useState('');
-  const [formTitle, setFormTitle] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formUrl, setFormUrl] = useState('');
-  const [formWeek, setFormWeek] = useState('1');
-  const [formDue, setFormDue] = useState('');
-  const [formEmail, setFormEmail] = useState('');
-  const [lessonModule, setLessonModule] = useState('');
+  const [ready, setReady] = useState(!isConfigured ? true : false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [creatorBio, setCreatorBio] = useState('');
+  const [loadingWorkspace, setLoadingWorkspace] = useState(false);
+  const [screen, setScreen] = useState<Screen>('site');
+  const [page, setPage] = useState<Page>('overview');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup');
+  const [catalog, setCatalog] = useState<CatalogCourse[]>([]);
+  const [publicCourseId, setPublicCourseId] = useState<string | null>(null);
+  const [publicCourse, setPublicCourse] = useState<Awaited<ReturnType<typeof fetchCourseOutline>>>(null);
+  const [courses, setCourses] = useState<CourseWithContent[]>([]);
+  const [enrolledIds, setEnrolledIds] = useState<Set<string>>(new Set());
+  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
+  const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
+  const [inviteError, setInviteError] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [authError, setAuthError] = useState('');
 
-  const demo = !supabase || !user;
-  const name = user?.full_name || user?.email?.split('@')[0] || 'Chisom Ogbonna';
-  const course = courses.find((item) => item.id === courseId) ?? courses[0];
-  const lessons = allLessons(course);
-  const lesson = lessons.find((item) => item.id === lessonId) ?? lessons[0];
-  const filteredCourses = useMemo(() => courses.filter((item) => item.title.toLowerCase().includes(search.toLowerCase())), [courses, search]);
-  const filteredTasks = assignments.filter((item) => taskFilter === 'all' || String(item.week_number) === taskFilter);
-
-  function notify(value: string) {
-    setToast(value);
-    window.setTimeout(() => setToast((current) => current === value ? '' : current), 2400);
-  }
-
-  async function loadWorkspace(current: User) {
-    const client = supabase;
-    if (!client) return;
-    const [profile, roles, owned, enrolled, taskRows] = await Promise.all([
-      client.from('profiles').select('full_name, avatar_url').eq('id', current.id).maybeSingle(),
-      client.from('user_roles').select('role').eq('user_id', current.id),
-      client.from('courses').select('id, creator_id, title, description, cover_url, published, course_modules(id, title, position, lessons(id, title, youtube_url, position, duration_seconds))').eq('creator_id', current.id),
-      client.from('course_enrollments').select('courses(id, creator_id, title, description, cover_url, published, course_modules(id, title, position, lessons(id, title, youtube_url, position, duration_seconds)))').eq('student_id', current.id).eq('status', 'active'),
-      client.from('assignments').select('id, course_id, title, instructions, week_number, due_at, published, assignment_submissions(id, student_id, response, submission_url, status, feedback)').eq('published', true).order('week_number', { ascending: false }),
-    ]);
-    if (profile.data) setUser({ ...current, ...profile.data });
-    const roleList = (roles.data ?? []).map((item) => item.role as Role);
-    setAvailableRoles(roleList);
-    setRole(roleList.includes('teacher') ? 'teacher' : 'student');
-    const rows = [...(owned.data ?? []), ...(enrolled.data ?? []).map((item: any) => item.courses).filter(Boolean)] as any[];
-    const unique = Array.from(new Map(rows.map((item) => [item.id, item])).values());
-    const progressRows = await client.from('lesson_progress').select('lesson_id, completed').eq('student_id', current.id);
-    const completed = new Set((progressRows.data ?? []).filter((row) => row.completed).map((row) => row.lesson_id));
-    const mapped = unique.map((item) => {
-      const modules = (item.course_modules ?? []).sort((a: any, b: any) => a.position - b.position).map((module: any) => ({
-        ...module,
-        lessons: (module.lessons ?? []).sort((a: any, b: any) => a.position - b.position).map((item: any) => ({ ...item, completed: completed.has(item.id) })),
-      }));
-      const items = modules.flatMap((module: any) => module.lessons);
-      return { ...item, modules, progress: items.length ? Math.round(items.filter((item: any) => item.completed).length / items.length * 100) : 0 };
-    }) as Course[];
-    setCourses(mapped);
-    setCourseId(mapped[0]?.id ?? '');
-    setLessonId(mapped[0]?.modules[0]?.lessons[0]?.id ?? '');
-    if (taskRows.data) setAssignments(taskRows.data.map((item: any) => ({
-      ...item,
-      submission: item.assignment_submissions?.find((row: any) => row.student_id === current.id) ?? null,
-    })));
-  }
-
-  useEffect(() => {=> {
-    const client = supabase;
-    if (!client) return;
-    client.auth.getSession().then(({ data }) => {
-      const current = data.session?.user;
-      if (current) {
-        const next = { id: current.id, email: current.email };
-        setUser(next);
-        void loadWorkspace(next);
-      }
-    });
-    const { data } = client.auth.onAuthStateChange((_event, session) => {
-      if (!session?.user) { setUser(null); setRole('student'); return; }
-      const next = { id: session.user.id, email: session.user.email };
-      setUser(next);
-      window.setTimeout(() => void loadWorkspace(next), 0);
-    });
-    return () => data.subscription.unsubscribe();
+  const notify = useCallback((message: string) => {
+    setToastMessage(message);
+    window.setTimeout(() => setToastMessage((current) => (current === message ? '' : current)), 3200);
   }, []);
 
+  const isCreator = Boolean(profile && (profile.roles?.includes('creator') || profile.role === 'creator'));
+
+  /* ---------------------------------------------------------------- catalog */
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      setCatalog(await fetchCatalog());
+    } catch {
+      setCatalog([]);
+    }
+  }, []);
+
+  useEffect(() => { void loadCatalog(); }, [loadCatalog]);
+
+  /* ------------------------------------------------------------------ auth */
+
+  const loadWorkspace = useCallback(async (userId: string) => {
+    setLoadingWorkspace(true);
+    try {
+      const { profile: nextProfile, creator } = await fetchProfile(userId);
+      if (!nextProfile) return;
+      setProfile(nextProfile);
+      const [myCourses, progress, enrolled] = await Promise.all([
+        fetchMyCourses(nextProfile),
+        fetchProgress(userId),
+        fetchEnrolledCourseIds(userId),
+      ]);
+      const content = await fetchCourseContent(myCourses.map((course) => course.id));
+      const withContent = myCourses.map((course) => ({
+        ...course,
+        modules: content[course.id] ?? [],
+      })) as CourseWithContent[];
+      setCourses(withContent);
+      setCompleted(progress);
+      setEnrolledIds(new Set(enrolled));
+      setActiveCourseId((current) => current ?? withContent[0]?.id ?? null);
+      setActiveLessonId((current) => {
+        if (current) return current;
+        const first = withContent[0]?.modules.flatMap((module) => module.lessons)[0];
+        return first?.id ?? null;
+      });
+      setCreatorBio(creator?.bio ?? '');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not load your workspace.');
+    } finally {
+      setLoadingWorkspace(false);
+    }
+  }, [notify]);
+
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get('invite');
-    if (!token) return;
-    if (!user || !supabase) { setAuthMode('signup'); return; }
-    void supabase.rpc('accept_course_invitation', { p_token: token }).then(({ error }) => {
-      if (error) notify(error.message);
-      else { notify('Course added'); window.history.replaceState({}, '', '/'); void loadWorkspace(user); }
+    if (!isConfigured || !supabase) return;
+    let mounted = true;
+    const error = readAuthError();
+    if (error) { setAuthError(error); clearAuthHash(); }
+
+    const invite = readInvite();
+    if (invite) {
+      setInviteToken(invite);
+      setScreen('invite');
+      void fetchInvitePreview(invite)
+        .then((preview) => {
+          if (!mounted) return;
+          if (preview) setInvitePreview(preview);
+          else setInviteError('That invitation link is no longer valid or has expired.');
+        })
+        .catch(() => { if (mounted) setInviteError('That invitation link is no longer valid.'); });
+    }
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      const user = data.session?.user;
+      if (user && mounted) {
+        await loadWorkspace(user.id);
+        if (!invite) {
+          const target = pathToPage();
+          if (target) { setPage(target); setScreen('workspace'); }
+        }
+      }
+      if (mounted) setReady(true);
     });
-  }, [user]);
 
-  useEffect(() => {
-    const client = supabase;
-    if (!client || demo || page !== 'classroom' || !courseId) return;
-    const refresh = () => client.from('classroom_messages').select('id, course_id, author_id, body, created_at, profiles(full_name, avatar_url)').eq('course_id', courseId).order('created_at').then(({ data }) => {
-      if (data) setMessages(data.map((row: any) => ({ ...row, author: row.profiles })));
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setProfile(null);
+        setCourses([]);
+        setCompleted(new Set());
+        setEnrolledIds(new Set());
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        window.setTimeout(() => { void loadWorkspace(session.user.id); }, 0);
+      }
     });
-    void refresh();
-    const channel = client.channel(`classroom-${courseId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'classroom_messages', filter: `course_id=eq.${courseId}` }, refresh).subscribe();
-    return () => { void client.removeChannel(channel); };
-  }, [courseId, page, demo]);
 
-  async function authenticate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase) return;
-    const data = new FormData(event.currentTarget);
-    const email = String(data.get('email') ?? '').trim();
-    const password = String(data.get('password') ?? '');
-    const fullName = String(data.get('fullName') ?? '').trim();
-    const result = authMode === 'signup'
-      ? await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName }, emailRedirectTo: `${window.location.origin}${window.location.search}` } })
-      : await supabase.auth.signInWithPassword({ email, password });
-    if (result.error) notify(result.error.message);
-    else if (authMode === 'signup' && !result.data.session) notify('Check your email to verify your account');
-    else { setAuthMode(null); notify('Signed in'); }
-  }
+    return () => { mounted = false; listener.subscription.unsubscribe(); };
+  }, [loadWorkspace]);
 
-  async function createCourse() {
-    if (!formTitle.trim()) return;
-    if (!demo && supabase && user) {
-      const { data, error } = await supabase.from('courses').insert({ creator_id: user.id, title: formTitle.trim(), description: formDescription }).select('id').single();
-      if (error) return notify(error.message);
-      const next: Course = { id: data.id, title: formTitle, description: formDescription, modules: [], progress: 0 };
-      setCourses((current) => [next, ...current]); setCourseId(next.id);
-    } else {
-      const next: Course = { id: `course-${Date.now()}`, title: formTitle, description: formDescription, modules: [], progress: 0 };
-      setCourses((current) => [next, ...current]); setCourseId(next.id);
+  /* --------------------------------------------------------------- routing */
+
+  const navigate = useCallback((next: Screen, nextPage: Page = 'overview') => {
+    setScreen(next);
+    if (next === 'workspace') setPage(nextPage);
+    const slug = next === 'workspace'
+      ? (nextPage === 'overview' ? '/' : `/${nextPage}`)
+      : next === 'site' ? '/' : window.location.pathname;
+    if (window.location.pathname !== slug && !(next === 'site' && window.location.search)) {
+      window.history.replaceState({}, '', slug);
     }
-    setRole('teacher'); setPage('courses'); closeModal(); notify('Course created');
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, []);
+
+  function openPublicCourse(courseId: string) {
+    setPublicCourseId(courseId);
+    setScreen('course');
+    setPublicCourse(null);
+    window.scrollTo({ top: 0 });
+    void fetchCourseOutline(courseId).then((outline) => setPublicCourse(outline)).catch(() => setPublicCourse(null));
   }
 
-  async function addModule() {
-    if (!course || !formTitle.trim()) return;
-    let id = `module-${Date.now()}`;
-    if (!demo && supabase) {
-      const { data, error } = await supabase.from('course_modules').insert({ course_id: course.id, title: formTitle.trim(), position: course.modules.length + 1 }).select('id').single();
-      if (error) return notify(error.message);
-      id = data.id;
+  function openWorkspaceCourse(courseId: string) {
+    const course = courses.find((row) => row.id === courseId);
+    if (!course) {
+      openPublicCourse(courseId);
+      return;
     }
-    setCourses((current) => current.map((item) => item.id === course.id ? { ...item, modules: [...item.modules, { id, title: formTitle, position: item.modules.length + 1, lessons: [] }] } : item));
-    closeModal(); notify('Module added');
+    setActiveCourseId(courseId);
+    const nextLesson = course.modules.flatMap((module) => module.lessons).find((lesson) => !completed.has(lesson.id));
+    setActiveLessonId(nextLesson?.id ?? course.modules[0]?.lessons[0]?.id ?? null);
+    navigate('workspace', 'courses');
   }
 
-  async function addLesson() {
-    if (!course || !getYouTubeId(formUrl) || !formTitle.trim()) return;
-    const parent = course.modules.find((item) => item.id === lessonModule);
-    if (!parent) return;
-    let id = `lesson-${Date.now()}`;
-    if (!demo && supabase) {
-      const { data, error } = await supabase.from('lessons').insert({ module_id: parent.id, title: formTitle.trim(), youtube_url: formUrl.trim(), position: parent.lessons.length + 1 }).select('id').single();
-      if (error) return notify(error.message);
-      id = data.id;
+  async function afterAuth() {
+    const { data } = await supabase!.auth.getSession();
+    const user = data.session?.user;
+    if (!user) {
+      setAuthError('Your email is not confirmed yet. Open the confirmation link we sent, then sign in.');
+      return;
     }
-    const next: Lesson = { id, title: formTitle, youtube_url: formUrl, position: parent.lessons.length + 1 };
-    setCourses((current) => current.map((item) => item.id === course.id ? { ...item, modules: item.modules.map((module) => module.id === parent.id ? { ...module, lessons: [...module.lessons, next] } : module) } : item));
-    setLessonId(id); closeModal(); notify('Lesson added');
-  }
-
-  async function markComplete(item: Lesson) {
-    if (!course) return;
-    if (!demo && supabase && user) {
-      const { error } = await supabase.from('lesson_progress').upsert({ lesson_id: item.id, student_id: user.id, completed: true, completed_at: new Date().toISOString() }, { onConflict: 'lesson_id,student_id' });
-      if (error) return notify(error.message);
+    await loadWorkspace(user.id);
+    setAuthError('');
+    if (inviteToken) {
+      await joinWithInvite();
+      return;
     }
-    setCourses((current) => current.map((entry) => {
-      if (entry.id !== course.id) return entry;
-      const modules = entry.modules.map((module) => ({ ...module, lessons: module.lessons.map((lesson) => lesson.id === item.id ? { ...lesson, completed: true } : lesson) }));
-      const total = modules.flatMap((module) => module.lessons);
-      return { ...entry, modules, progress: total.length ? Math.round(total.filter((lesson) => lesson.completed).length / total.length * 100) : 0 };
-    }));
-    notify('Lesson completed');
+    navigate('workspace', pathToPage() ?? 'overview');
   }
 
-  async function sendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!course || !reply.trim()) return;
-    if (!demo && supabase && user) {
-      const { error } = await supabase.from('classroom_messages').insert({ course_id: course.id, author_id: user.id, body: reply.trim() });
-      if (error) return notify(error.message);
-    } else setMessages((current) => [...current, { id: String(Date.now()), course_id: course.id, author_id: 'preview', body: reply.trim(), created_at: new Date().toISOString(), author: { full_name: name } }]);
-    setReply('');
-  }
+  /* -------------------------------------------------------------- invitations */
 
-  async function createTask() {
-    if (!course || !formTitle.trim()) return;
-    if (!demo && supabase && user) {
-      const { data, error } = await supabase.from('assignments').insert({ course_id: course.id, created_by: user.id, title: formTitle.trim(), instructions: formDescription, week_number: Number(formWeek), due_at: formDue ? new Date(formDue).toISOString() : null, published: true }).select('id').single();
-      if (error) return notify(error.message);
-      setAssignments((current) => [{ id: data.id, course_id: course.id, title: formTitle, instructions: formDescription, week_number: Number(formWeek), due_at: formDue || null }, ...current]);
-    } else setAssignments((current) => [{ id: String(Date.now()), course_id: course.id, title: formTitle, instructions: formDescription, week_number: Number(formWeek), due_at: formDue || null }, ...current]);
-    closeModal(); notify('Task published');
-  }
-
-  async function submitTask(id: string, event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!demo && supabase && user) {
-      const { error } = await supabase.from('assignment_submissions').upsert({ assignment_id: id, student_id: user.id, response: submitText, submission_url: submitUrl || null, status: 'submitted', submitted_at: new Date().toISOString() }, { onConflict: 'assignment_id,student_id' });
-      if (error) return notify(error.message);
+  async function joinWithInvite() {
+    if (!inviteToken || !supabase) return;
+    setJoining(true);
+    setInviteError('');
+    try {
+      const courseId = await acceptInvite(inviteToken);
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) await loadWorkspace(data.session.user.id);
+      await loadCatalog();
+      clearInvite();
+      window.history.replaceState({}, '', '/courses');
+      setInviteToken(null);
+      setInvitePreview(null);
+      setActiveCourseId(courseId);
+      navigate('workspace', 'courses');
+      notify('You are in. The course has been added to your workspace.');
+    } catch (error) {
+      setInviteError(error instanceof Error ? error.message : 'Could not accept the invitation.');
+    } finally {
+      setJoining(false);
     }
-    setAssignments((current) => current.map((item) => item.id === id ? { ...item, submission: { id: String(Date.now()), response: submitText, submission_url: submitUrl, status: 'submitted', feedback: '' } } : item));
-    notify('Task submitted');
   }
 
-  async function createInvite() {
-    if (!course) return;
-    let link = `${window.location.origin}/?invite=preview`;
-    if (!demo && supabase && user) {
-      const { data, error } = await supabase.from('course_invitations').insert({ course_id: course.id, created_by: user.id, invited_email: formEmail.trim() || null }).select('token').single();
-      if (error) return notify(error.message);
-      link = `${window.location.origin}/?invite=${data.token}`;
-    }
-    try { await navigator.clipboard.writeText(link); notify('Invitation link copied'); }
-    catch { notify('Copy this invitation link: ' + link); }
-    closeModal();
-  }
+  /* ------------------------------------------------------------------ actions */
 
-  async function signOut() { await supabase?.auth.signOut(); setUser(null); setRole('student'); setAvailableRoles(['student', 'teacher']); setPage('home'); }
+  const actions = useMemo(() => ({
+    toast: notify,
+    loadRoster: fetchRoster,
+    loadInvites: fetchInvites,
+    onToggleLesson: async (lesson: Lesson, next: boolean) => {
+      if (!profile) return;
+      setCompleted((current) => {
+        const copy = new Set(current);
+        if (next) copy.add(lesson.id); else copy.delete(lesson.id);
+        return copy;
+      });
+      try { await saveProgress(profile.id, lesson.id, next); }
+      catch (error) { notify(error instanceof Error ? error.message : 'Could not save progress.'); }
+    },
+    onBecomeCreator: async () => {
+      if (!profile) return;
+      await becomeCreator();
+      const { profile: next } = await fetchProfile(profile.id);
+      if (next) setProfile(next);
+      await loadWorkspace(profile.id);
+    },
+    onCreateCourse: async (values: { title: string; description: string; category: string }) => {
+      if (!profile) return;
+      const created = await createCourse({ ...values, creator_id: profile.id });
+      const next: CourseWithContent = { ...created, modules: [] };
+      setCourses((current) => [next, ...current]);
+      setActiveCourseId(created.id);
+      setPage('courses');
+      notify('Course created. Add a module next.');
+    },
+    onCreateModule: async (courseId: string, title: string) => {
+      const course = courses.find((row) => row.id === courseId);
+      const created = await createModule(courseId, title, course?.modules.length ?? 0);
+      setCourses((current) => current.map((row) => row.id === courseId ? { ...row, modules: [...row.modules, created] } : row));
+      notify('Module added.');
+    },
+    onCreateLesson: async ({ moduleId, title, youtubeUrl }: { moduleId: string; title: string; youtubeUrl: string }) => {
+      const course = courses.find((row) => row.modules.some((module) => module.id === moduleId));
+      const parent = course?.modules.find((module) => module.id === moduleId);
+      const created = await createLesson({ module_id: moduleId, title, youtube_url: youtubeUrl, position: parent?.lessons.length ?? 0 });
+      setCourses((current) => current.map((row) => row.id !== course?.id ? row : {
+        ...row,
+        modules: row.modules.map((module) => module.id === moduleId ? { ...module, lessons: [...module.lessons, created] } : module),
+      }));
+      setActiveLessonId(created.id);
+      notify('Lesson added.');
+    },
+    onDeleteLesson: async (lessonId: string) => {
+      await deleteLesson(lessonId);
+      setCourses((current) => current.map((row) => ({
+        ...row,
+        modules: row.modules.map((module) => ({ ...module, lessons: module.lessons.filter((lesson) => lesson.id !== lessonId) })),
+      })));
+      setActiveLessonId((current) => (current === lessonId ? null : current));
+      notify('Lesson removed.');
+    },
+    onTogglePublish: async (course: Course, publish: boolean) => {
+      await updateCourse(course.id, { is_published: publish });
+      setCourses((current) => current.map((row) => row.id === course.id ? { ...row, is_published: publish } : row));
+      await loadCatalog();
+      notify(publish ? 'Course is live.' : 'Course moved back to draft.');
+    },
+    onEnroll: async (courseId: string, email: string) => { await enrollByEmail(courseId, email); },
+    onRevoke: async (enrollmentId: string) => { await revokeEnrollment(enrollmentId); notify('Student removed.'); },
+    onCreateInvite: async (courseId: string) => {
+      if (!profile) throw new Error('Sign in first.');
+      return createInvite(courseId, profile.id);
+    },
+    onRevokeInvite: async (inviteId: string) => { await revokeInvite(inviteId); notify('Invitation revoked.'); },
+    onUpdateProfile: async (values: { display_name: string; bio: string }) => {
+      if (!profile) return;
+      await updateCreatorProfile(profile.id, values);
+      const { profile: next } = await fetchProfile(profile.id);
+      if (next) setProfile(next);
+    },
+    onSignOut: async () => {
+      await signOut();
+      setProfile(null);
+      setCourses([]);
+      setCompleted(new Set());
+      setEnrolledIds(new Set());
+      setActiveCourseId(null);
+      setActiveLessonId(null);
+      navigate('site');
+    },
+  }), [completed, courses, loadCatalog, navigate, notify, profile]);
 
-  function openModal(kind: ModalKind, moduleId = '') {
-    setFormTitle(''); setFormDescription(''); setFormUrl(''); setFormWeek('1'); setFormDue(''); setFormEmail(''); setLessonModule(moduleId); setModal(kind);
-  }
-  function closeModal() { setModal(null); }
+  /* ------------------------------------------------------------------- render */
 
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <button className="brand" onClick={() => setPage('home')}><span className="brand-symbol">t</span><span>Tura</span></button>
-      <div className="workspace-user"><span className="avatar">{initials(name)}</span><div><strong>{role === 'teacher' ? 'Creator' : 'Student'}</strong><small>{name}</small></div></div>
-      <nav className="navigation">
-        {([{ id: 'home', label: 'Overview', icon: LayoutDashboard }, { id: 'courses', label: 'Courses', icon: BookOpen }, { id: 'classroom', label: 'Classroom', icon: MessageCircle }, { id: 'tasks', label: 'Tasks', icon: ClipboardList }, { id: 'profile', label: 'Profile', icon: Settings }] as const).map(({ id, label, icon: Icon }) => <button key={id} className={page === id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(id)}><Icon size={17} /><span>{label}</span></button>)}
-      </nav>
-      <div className="sidebar-footer">
-        <div className="role-toggle"><button className={role === 'student' ? 'selected' : ''} disabled={!demo && !availableRoles.includes('student')} onClick={() => setRole('student')}><GraduationCap size={14} /> Student</button><button className={role === 'teacher' ? 'selected' : ''} disabled={!demo && !availableRoles.includes('teacher')} title={!demo && !availableRoles.includes('teacher') ? 'Creator access has not been enabled for this account' : 'Switch to creator'} onClick={() => setRole('teacher')}><Users size={14} /> Creator</button></div>
-        {user ? <button className="signout" onClick={signOut}><LogOut size={15} /> Sign out</button> : <button className="signout" onClick={() => setAuthMode('signin')}>Sign in</button>}
+  if (!ready) {
+    return (
+      <div className="loading-shell">
+        <span className="loading-mark">t</span>
+        <p className="mono" style={{ fontSize: 12, letterSpacing: '0.08em' }}>Loading Tura</p>
       </div>
-    </aside>
+    );
+  }
 
-    <main className="main-area">
-      <header className="topbar"><div className="crumb">Workspace <span>/</span> {page[0].toUpperCase() + page.slice(1)}</div><div className="top-actions"><label className="search"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search" /></label>{user ? <span className="avatar">{initials(name)}</span> : <button className="button subtle" onClick={() => setAuthMode('signin')}>Sign in</button>}</div></header>
+  if (!authConfigured()) {
+    return (
+      <div className="loading-shell" style={{ padding: 24 }}>
+        <div className="card" style={{ maxWidth: 520, display: 'grid', gap: 12 }}>
+          <span className="tag tag--yellow">Configuration</span>
+          <h1 className="h-md">Connect Supabase to use Tura.</h1>
+          <p className="helper">Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then rebuild.</p>
+        </div>
+      </div>
+    );
+  }
 
-      <div className="content">
-        {demo && <div className="preview-bar"><span>Preview</span><button onClick={() => setAuthMode('signup')}>Create account</button></div>}
-        {page === 'home' && <section className="stack">
-          <div className="page-title"><h1>{role === 'teacher' ? 'Your workspace' : `Welcome back, ${name.split(' ')[0]}`}</h1>{role === 'teacher' && <button className="button primary" onClick={() => openModal('course')}><Plus size={15} /> New course</button>}</div>
-          <div className="stats"><div className="stat"><BookOpen size={17} /><div><small>{role === 'teacher' ? 'Courses' : 'Enrolled courses'}</small><strong>{courses.length}</strong></div></div><div className="stat"><CheckCircle2 size={17} /><div><small>Lessons completed</small><strong>{courses.reduce((sum, item) => sum + allLessons(item).filter((lesson) => lesson.completed).length, 0)} / {courses.reduce((sum, item) => sum + allLessons(item).length, 0)}</strong></div></div><div className="stat"><ClipboardList size={17} /><div><small>Tasks remaining</small><strong>{assignments.filter((item) => !item.submission).length}</strong></div></div></div>
-          <div className="section-heading"><h2>{role === 'teacher' ? 'Your courses' : 'Continue learning'}</h2><button className="text-link" onClick={() => setPage('courses')}>View all</button></div>
-          {filteredCourses.length ? <div className="course-grid">{filteredCourses.slice(0, 3).map((item) => <button className="course-card" key={item.id} onClick={() => { setCourseId(item.id); setLessonId(allLessons(item).find((lesson) => !lesson.completed)?.id ?? allLessons(item)[0]?.id ?? ''); setPage('courses'); }}><div className="course-art" style={item.cover_url ? { backgroundImage: `url(${item.cover_url})` } : undefined}><BookOpen size={22} /></div><div className="course-card-content"><strong>{item.title}</strong><small>{item.modules.length} modules · {allLessons(item).length} lessons</small><div className="progress"><span style={{ width: `${item.progress ?? 0}%` }} /></div><small>{item.progress ?? 0}% complete</small></div></button>)}</div> : <div className="empty">No courses yet.{role === 'teacher' && <button className="text-link" onClick={() => openModal('course')}>Create course</button>}</div>}
-          <div className="section-heading"><h2>This week</h2><button className="text-link" onClick={() => setPage('tasks')}>All tasks</button></div>
-          <div className="list-card">{assignments.filter((item) => !item.submission).slice(0, 4).map((item) => <button className="task-row" key={item.id} onClick={() => { setSelectedTask(item.id); setPage('tasks'); }}><span className="task-marker" /><span><strong>{item.title}</strong><small>Week {item.week_number}</small></span><time>{dueLabel(item.due_at)}</time></button>)}{!assignments.some((item) => !item.submission) && <div className="empty">You're all caught up.</div>}</div>
-        </section>}
+  const signedIn = Boolean(profile);
+  const lessonCount = catalog.reduce((sum, course) => sum + Number(course.lesson_count ?? 0), 0);
 
-        {page === 'courses' && <section className="stack">
-          <div className="page-title"><h1>Courses</h1>{role === 'teacher' && <div className="button-row"><button className="button subtle" onClick={() => openModal('invite')}><Share2 size={15} /> Invite</button><button className="button primary" onClick={() => openModal('module')}><Plus size={15} /> Module</button></div>}</div>
-          {!courses.length ? <div className="empty">No courses available.</div> : <><select className="course-picker" value={courseId} onChange={(event) => { setCourseId(event.target.value); const next = courses.find((item) => item.id === event.target.value); setLessonId(allLessons(next)[0]?.id ?? ''); }}>{courses.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
-            <div className="course-workspace"><div className="course-title"><div><h2>{course.title}</h2><p>{course.description}</p></div><div className="course-progress-label"><strong>{course.progress ?? 0}%</strong><small>complete</small></div></div>
-              <div className="learning-grid"><div><div className="video-box">{lesson && getYouTubeEmbedUrl(lesson.youtube_url) ? <iframe src={getYouTubeEmbedUrl(lesson.youtube_url)!} title={lesson.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /> : <div className="no-video"><Video size={25} /> Add a YouTube lesson</div>}</div><div className="lesson-bottom"><div><small>{course.modules.find((item) => item.lessons.some((row) => row.id === lesson?.id))?.title ?? 'Lesson'}</small><h3>{lesson?.title ?? 'Select a lesson'}</h3></div>{lesson && <button className="button subtle" onClick={() => void markComplete(lesson)}>{lesson.completed ? <Check size={15} /> : <CheckCircle2 size={15} />}{lesson.completed ? 'Completed' : 'Mark complete'}</button>}</div><button className="text-link" onClick={() => setPage('classroom')}>Open classroom</button></div>
-              <aside className="curriculum"><div className="curriculum-title"><strong>Course content</strong><small>{allLessons(course).filter((item) => item.completed).length}/{allLessons(course).length}</small></div>{course.modules.map((module) => <div className="module" key={module.id}><div className="module-header"><button onClick={() => setModuleOpen((current) => ({ ...current, [module.id]: !(current[module.id] ?? true) }))}><ChevronDown size={15} className={(moduleOpen[module.id] ?? true) ? '' : 'collapsed'} /><span>{module.title}</span><small>{module.lessons.length}</small></button>{role === 'teacher' && <button className="icon-button" onClick={() => openModal('lesson', module.id)}><Plus size={15} /></button>}</div>{(moduleOpen[module.id] ?? true) && module.lessons.map((item) => <button className={lesson?.id === item.id ? 'lesson active' : 'lesson'} key={item.id} onClick={() => setLessonId(item.id)}><span className="lesson-check">{item.completed ? <Check size={12} /> : <Video size={12} />}</span><span>{item.title}</span></button>)}</div>)}{!course.modules.length && <div className="empty small-empty">No modules yet.</div>}</aside>
+  if (screen === 'workspace' && profile) {
+    return (
+      <>
+        <Workspace
+          profile={profile}
+          creatorBio={creatorBio}
+          isCreator={isCreator}
+          courses={courses}
+          enrolledIds={enrolledIds}
+          completed={completed}
+          page={page}
+          activeCourseId={activeCourseId}
+          activeLessonId={activeLessonId}
+          onPage={(next) => { setPage(next); window.scrollTo({ top: 0 }); }}
+          onOpenCourse={openWorkspaceCourse}
+          onSelectLesson={(lessonId) => setActiveLessonId(lessonId)}
+          {...actions}
+        />
+        {loadingWorkspace && (
+          <div className="toast" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Loader2 size={16} /> Syncing your workspace
+          </div>
+        )}
+        {toastMessage && <div className="toast">{toastMessage}</div>}
+      </>
+    );
+  }
+
+  if (screen === 'auth') {
+    return (
+      <>
+        <Ticker items={TICKER} />
+        <AuthScreen
+          mode={authMode}
+          onMode={setAuthMode}
+          onBack={() => navigate('site')}
+          onSignedIn={() => { void afterAuth(); }}
+          invitePending={Boolean(inviteToken)}
+        />
+        {authError && (
+          <div className="toast" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <AlertCircle size={16} /> {authError}
+          </div>
+        )}
+        {toastMessage && <div className="toast">{toastMessage}</div>}
+      </>
+    );
+  }
+
+  if (screen === 'invite') {
+    return (
+      <>
+        <Ticker items={TICKER} />
+        <InviteFlow
+          preview={invitePreview}
+          error={inviteError}
+          signedIn={signedIn}
+          joining={joining}
+          onJoin={() => void joinWithInvite()}
+          onSignIn={() => { setAuthMode('signin'); setScreen('auth'); }}
+          onSignUp={() => { setAuthMode('signup'); setScreen('auth'); }}
+          onHome={() => navigate('site')}
+        />
+        {toastMessage && <div className="toast">{toastMessage}</div>}
+      </>
+    );
+  }
+
+  if (screen === 'course') {
+    return (
+      <>
+        <Ticker items={TICKER} />
+        <SiteNav
+          signedIn={signedIn}
+          onSignIn={() => { setAuthMode('signin'); setScreen('auth'); }}
+          onSignUp={() => { setAuthMode('signup'); setScreen('auth'); }}
+          onOpenWorkspace={() => navigate('workspace', 'overview')}
+        />
+        {publicCourse ? (
+          <PublicCourse
+            course={publicCourse}
+            modules={publicCourse.modules}
+            isMember={Boolean(publicCourseId && enrolledIds.has(publicCourseId))}
+            signedIn={signedIn}
+            onSignIn={() => { setAuthMode('signin'); setScreen('auth'); }}
+            onSignUp={() => { setAuthMode('signup'); setScreen('auth'); }}
+            onOpenCourse={() => { if (publicCourseId) openWorkspaceCourse(publicCourseId); }}
+          />
+        ) : (
+          <section className="section">
+            <div className="page">
+              <div className="empty">
+                <span className="empty-mark"><AlertCircle size={22} /></span>
+                <strong>{publicCourseId ? 'Loading this course…' : 'Course not found.'}</strong>
+                <button className="btn btn-outline btn-sm" onClick={() => navigate('site')}>Back to catalog</button>
               </div>
             </div>
-          </>}
-        </section>}
+          </section>
+        )}
+        <SiteFooter />
+        {toastMessage && <div className="toast">{toastMessage}</div>}
+      </>
+    );
+  }
 
-        {page === 'classroom' && <section className="stack"><div className="page-title"><h1>Classroom</h1>{courses.length > 1 && <select className="course-picker small-picker" value={courseId} onChange={(event) => setCourseId(event.target.value)}>{courses.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select>}</div><div className="classroom"><div className="classroom-head"><strong>{course?.title ?? 'Classroom'}</strong><span>{messages.filter((item) => item.course_id === courseId).length} messages</span></div><div className="message-list">{messages.filter((item) => item.course_id === courseId).map((item) => <article className="message" key={item.id}><span className="avatar">{initials(item.author?.full_name ?? 'Student')}</span><div><div className="message-meta"><strong>{item.author?.full_name ?? 'Student'}</strong><time>{new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(item.created_at))}</time></div><p>{item.body}</p></div></article>)}{!messages.some((item) => item.course_id === courseId) && <div className="empty">Start a conversation with your class.</div>}</div><form className="message-input" onSubmit={sendMessage}><input value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Write a message" /><button className="button primary" disabled={!reply.trim()}><Send size={15} /></button></form></div></section>}
+  return (
+    <>
+      <Ticker items={TICKER} />
+      <SiteNav
+        signedIn={signedIn}
+        onSignIn={() => { setAuthMode('signin'); setScreen('auth'); }}
+        onSignUp={() => { setAuthMode('signup'); setScreen('auth'); }}
+        onOpenWorkspace={() => navigate('workspace', 'overview')}
+      />
+      <main id="top">
+        <Hero
+          courseCount={catalog.length}
+          lessonCount={lessonCount}
+          onSignUp={() => { setAuthMode('signup'); setScreen('auth'); }}
+          onBrowse={() => document.getElementById('courses')?.scrollIntoView({ behavior: 'smooth' })}
+        />
+        <Catalog courses={catalog} onOpen={openPublicCourse} signedIn={signedIn} />
+        <HowItWorks />
+        <CreatorBand onSignUp={() => { setAuthMode('signup'); setScreen('auth'); }} />
+        <ClosingCta
+          signedIn={signedIn}
+          onSignUp={() => { setAuthMode('signup'); setScreen('auth'); }}
+          onSignIn={() => { setAuthMode('signin'); setScreen('auth'); }}
+          onOpenWorkspace={() => navigate('workspace', 'overview')}
+        />
+      </main>
+      <SiteFooter />
+      {authError && (
+        <div className="toast" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <AlertCircle size={16} /> {authError}
+        </div>
+      )}
+      {toastMessage && <div className="toast">{toastMessage}</div>}
+    </>
+  );
+}
 
-        {page === 'tasks' && <section className="stack"><div className="page-title"><h1>Tasks</h1>{role === 'teacher' && <button className="button primary" onClick={() => openModal('task')}><Plus size={15} /> New task</button>}</div><div className="filters"><button className={taskFilter === 'all' ? 'active' : ''} onClick={() => setTaskFilter('all')}>All weeks</button>{Array.from(new Set(assignments.map((item) => item.week_number))).sort((a, b) => b - a).map((week) => <button className={taskFilter === String(week) ? 'active' : ''} key={week} onClick={() => setTaskFilter(String(week))}>Week {week}</button>)}</div><div className="task-layout"><div className="task-list">{filteredTasks.map((item) => <button className={selectedTask === item.id ? 'task-card selected' : 'task-card'} key={item.id} onClick={() => { setSelectedTask(item.id); setSubmitText(item.submission?.response ?? ''); setSubmitUrl(item.submission?.submission_url ?? ''); }}><span className="task-marker" /><span><strong>{item.title}</strong><small>Week {item.week_number} · Due {dueLabel(item.due_at)}</small></span><em>{item.submission ? 'Submitted' : 'To do'}</em></button>)}{!filteredTasks.length && <div className="empty">No tasks for this week.</div>}</div><div className="task-detail">{assignments.find((item) => item.id === selectedTask) ? (() => { const item = assignments.find((row) => row.id === selectedTask)!; return <><small>Week {item.week_number}</small><h2>{item.title}</h2><p>{item.instructions}</p><div className="due">Due {dueLabel(item.due_at)}</div>{role === 'student' && <form className="submit-form" onSubmit={(event) => void submitTask(item.id, event)}><label>Your response</label><textarea rows={4} value={submitText} onChange={(event) => setSubmitText(event.target.value)} placeholder="Write your response" /><label>Work link</label><input value={submitUrl} onChange={(event) => setSubmitUrl(event.target.value)} placeholder="https://" /><button className="button primary" type="submit"><Send size={15} /> Submit</button></form>}{role === 'teacher' && <div className="empty">Student submissions will appear here.</div>}{item.submission?.feedback && <div className="feedback"><strong>Teacher feedback</strong><p>{item.submission.feedback}</p></div>}</>; })() : <div className="empty">Select a task.</div>}</div></div></section>}
+/* ---------------------------------------------------------------------------
+   Invitation landing
+   --------------------------------------------------------------------------- */
 
-        {page === 'profile' && <section className="stack"><div className="page-title"><h1>Profile</h1></div><div className="profile-card"><span className="profile-avatar">{initials(name)}</span><div><h2>{name}</h2><p>{user?.email ?? 'Preview account'}</p><span>{role === 'teacher' ? 'Creator' : 'Student'}</span></div></div></section>}
+function InviteFlow({
+  preview,
+  error,
+  signedIn,
+  joining,
+  onJoin,
+  onSignIn,
+  onSignUp,
+  onHome,
+}: {
+  preview: InvitePreview | null;
+  error: string;
+  signedIn: boolean;
+  joining: boolean;
+  onJoin: () => void;
+  onSignIn: () => void;
+  onSignUp: () => void;
+  onHome: () => void;
+}) {
+  return (
+    <div className="invite-shell">
+      <div className="invite-card fade-up">
+        {preview?.thumbnail_url && (
+          <div className="invite-art"><img src={preview.thumbnail_url} alt="" /></div>
+        )}
+        <div className="invite-body">
+          <span className="tag tag--iris">You have been invited</span>
+          {preview ? (
+            <>
+              <h1>{preview.title}</h1>
+              <p className="lede" style={{ color: 'rgba(17,17,24,0.7)' }}>{preview.description}</p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span className="tag">{preview.lesson_count} lessons</span>
+                <span className="tag tag--yellow">{preview.student_count} enrolled</span>
+                <span className="tag tag--outline">{preview.category || 'Course'}</span>
+              </div>
+              <p className="helper">Taught by {preview.creator_name}. This link works until it expires or the creator revokes it.</p>
+            </>
+          ) : (
+            <>
+              <h1>{error ? 'This link is not active.' : 'Checking your invitation…'}</h1>
+              <p className="helper">{error || 'One moment while we look up the course.'}</p>
+            </>
+          )}
+
+          {error && <p className="error-text"><AlertCircle size={16} style={{ flex: 'none' }} />{error}</p>}
+
+          {preview && (
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              {signedIn ? (
+                <button className="btn btn-primary btn-lg" onClick={onJoin} disabled={joining}>
+                  {joining ? <Loader2 size={18} /> : <Sparkles size={18} />} Join this course
+                </button>
+              ) : (
+                <>
+                  <button className="btn btn-primary btn-lg" onClick={onSignUp}>
+                    Create an account to join <ArrowRight size={18} />
+                  </button>
+                  <button className="btn btn-outline btn-lg" onClick={onSignIn}>
+                    <LogIn size={18} /> Sign in
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          <button className="btn btn-ghost btn-sm" style={{ justifySelf: 'start' }} onClick={onHome}>
+            Explore Tura instead
+          </button>
+        </div>
       </div>
-    </main>
-
-    {modal && <div className="overlay" onClick={(event) => { if (event.target === event.currentTarget) closeModal(); }}><form className="modal" onSubmit={(event) => { event.preventDefault(); if (modal === 'course') void createCourse(); if (modal === 'module') void addModule(); if (modal === 'lesson') void addLesson(); if (modal === 'task') void createTask(); if (modal === 'invite') void createInvite(); }}><div className="modal-top"><h2>{({ course: 'New course', module: 'New module', lesson: 'New lesson', task: 'Weekly task', invite: 'Invite students' })[modal]}</h2><button type="button" className="icon-button" onClick={closeModal}><X size={18} /></button></div>{modal === 'course' && <><label>Course name</label><input autoFocus value={formTitle} onChange={(event) => setFormTitle(event.target.value)} required /><label>Description</label><textarea rows={3} value={formDescription} onChange={(event) => setFormDescription(event.target.value)} /></>}{modal === 'module' && <><label>Module title</label><input autoFocus value={formTitle} onChange={(event) => setFormTitle(event.target.value)} required /></>}{modal === 'lesson' && <><label>Lesson title</label><input autoFocus value={formTitle} onChange={(event) => setFormTitle(event.target.value)} required /><label>YouTube URL</label><input value={formUrl} onChange={(event) => setFormUrl(event.target.value)} placeholder="Paste a YouTube link" required />{formUrl && <small className={getYouTubeId(formUrl) ? 'valid' : 'invalid'}>{getYouTubeId(formUrl) ? 'YouTube link recognized' : 'Enter a valid YouTube link'}</small>}</>}{modal === 'task' && <><label>Task title</label><input autoFocus value={formTitle} onChange={(event) => setFormTitle(event.target.value)} required /><label>Instructions</label><textarea rows={4} value={formDescription} onChange={(event) => setFormDescription(event.target.value)} /><div className="form-columns"><div><label>Week</label><input type="number" min="1" value={formWeek} onChange={(event) => setFormWeek(event.target.value)} /></div><div><label>Due date</label><input type="date" value={formDue} onChange={(event) => setFormDue(event.target.value)} /></div></div></>}{modal === 'invite' && <><label>Student email</label><input type="email" value={formEmail} onChange={(event) => setFormEmail(event.target.value)} placeholder="Optional" /></>}<button className="button primary full" disabled={modal !== 'invite' && !formTitle.trim() || (modal === 'lesson' && !getYouTubeId(formUrl))}>{modal === 'invite' ? 'Copy invitation link' : modal === 'task' ? 'Publish task' : modal === 'lesson' ? 'Add lesson' : modal === 'module' ? 'Add module' : 'Create course'}</button></form></div>}
-
-    {authMode && <div className="overlay" onClick={(event) => { if (event.target === event.currentTarget) setAuthMode(null); }}><form className="modal" onSubmit={authenticate}><div className="modal-top"><h2>{authMode === 'signup' ? 'Create account' : 'Sign in'}</h2><button type="button" className="icon-button" onClick={() => setAuthMode(null)}><X size={18} /></button></div>{authMode === 'signup' && <><label>Name</label><input name="fullName" autoFocus required /></>}<label>Email</label><input name="email" type="email" required autoFocus={authMode === 'signin'} /><label>Password</label><input name="password" type="password" minLength={8} required /><button className="button primary full">{authMode === 'signup' ? 'Create account' : 'Sign in'}</button><div className="switch-auth">{authMode === 'signup' ? 'Already registered?' : 'New to Tura?'} <button type="button" onClick={() => setAuthMode(authMode === 'signup' ? 'signin' : 'signup')}>{authMode === 'signup' ? 'Sign in' : 'Create account'}</button></div></form></div>}
-    {toast && <div className="toast">{toast}</div>}
-  </div>;
+      {preview && <span className="sr-only">{initials(preview.creator_name)}</span>}
+    </div>
+  );
 }

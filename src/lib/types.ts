@@ -1,7 +1,117 @@
-export type Role = 'student' | 'teacher';
-export type Page = 'home' | 'courses' | 'classroom' | 'tasks' | 'profile';
-export type Lesson = { id: string; title: string; youtube_url: string; position: number; duration_seconds?: number | null; completed?: boolean };
-export type Module = { id: string; title: string; position: number; lessons: Lesson[] };
-export type Course = { id: string; title: string; description: string; cover_url?: string | null; creator_id?: string; published?: boolean; progress?: number; modules: Module[] };
-export type ClassroomMessage = { id: string; course_id: string; author_id: string; body: string; created_at: string; parent_id?: string | null; author?: { full_name: string; avatar_url?: string | null } };
-export type Assignment = { id: string; course_id: string; title: string; instructions: string; week_number: number; due_at?: string | null; published?: boolean; submission?: { id: string; response: string; submission_url?: string | null; status: string; feedback: string } | null };
+export type Role = 'creator' | 'student';
+
+export type Profile = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  role: string;
+  roles: string[];
+  username: string | null;
+  avatar_url: string | null;
+};
+
+export type CreatorProfile = {
+  user_id: string;
+  display_name: string;
+  bio: string;
+  accent_color: string;
+};
+
+export type Lesson = {
+  id: string;
+  module_id: string;
+  title: string;
+  description: string;
+  youtube_url: string;
+  position: number;
+  duration: string | null;
+};
+
+export type Module = {
+  id: string;
+  course_id: string;
+  title: string;
+  description: string;
+  position: number;
+  lessons: Lesson[];
+};
+
+export type Course = {
+  id: string;
+  creator_id: string;
+  title: string;
+  description: string;
+  category: string;
+  thumbnail_url: string | null;
+  is_published: boolean;
+  created_at: string;
+};
+
+export type CourseWithContent = Course & { modules: Module[] };
+
+export type CatalogCourse = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  thumbnail_url: string | null;
+  creator_name: string;
+  module_count: number;
+  lesson_count: number;
+  student_count: number;
+  created_at: string;
+};
+
+export type CourseOutlineLesson = {
+  id: string;
+  title: string;
+  duration: string | null;
+  position: number;
+};
+
+export type CourseOutline = {
+  course_id: string;
+  title: string;
+  description: string;
+  category: string;
+  thumbnail_url: string | null;
+  creator_name: string;
+  is_published: boolean;
+  module_count: number;
+  lesson_count: number;
+  student_count: number;
+  modules: { id: string; title: string; description: string; position: number; lessons: CourseOutlineLesson[] }[];
+};
+
+export type InvitePreview = {
+  course_id: string;
+  title: string;
+  description: string;
+  category: string;
+  thumbnail_url: string | null;
+  creator_name: string;
+  lesson_count: number;
+  student_count: number;
+  expires_at: string;
+};
+
+export type Enrollment = {
+  id: string;
+  course_id: string;
+  student_id: string;
+  enrolled_at: string;
+  profiles: { full_name: string; email: string | null; username: string | null } | null;
+};
+
+export type CourseInvite = {
+  id: string;
+  token: string;
+  active: boolean;
+  expires_at: string;
+  created_at: string;
+};
+
+export type ProgressRow = {
+  lesson_id: string;
+  is_completed: boolean;
+};
