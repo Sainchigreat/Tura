@@ -6,6 +6,22 @@ export function authConfigured() {
   return Boolean(supabase);
 }
 
+/**
+ * Where Supabase should send someone after they click an email link.
+ *
+ * A confirmation link always opens in a new tab, so nothing held in memory or
+ * sessionStorage survives the round trip. The invitation token has to travel in
+ * the URL itself or an invited student lands on a workspace with no course.
+ */
+function redirectWithInvite(): string {
+  const params = new URLSearchParams({ from: 'email' });
+  const pending = window.localStorage.getItem('tura.pending-invite');
+  const inUrl = new URLSearchParams(window.location.search).get('invite');
+  const token = inUrl ?? pending;
+  if (token) params.set('invite', token);
+  return `${window.location.origin}/?${params.toString()}`;
+}
+
 export async function signIn(email: string, password: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -27,7 +43,7 @@ export async function signUp(values: {
         full_name: values.fullName.trim(),
         initial_role: values.asCreator ? 'creator' : 'student',
       },
-      emailRedirectTo: window.location.origin,
+      emailRedirectTo: redirectWithInvite(),
     },
   });
   if (error) throw new Error(error.message);
@@ -39,7 +55,7 @@ export async function resendConfirmation(email: string) {
   const { error } = await supabase.auth.resend({
     type: 'signup',
     email: email.trim(),
-    options: { emailRedirectTo: window.location.origin },
+    options: { emailRedirectTo: redirectWithInvite() },
   });
   if (error) throw new Error(error.message);
 }
@@ -47,7 +63,7 @@ export async function resendConfirmation(email: string) {
 export async function requestPasswordReset(email: string) {
   if (!supabase) throw new Error('Supabase is not configured.');
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: window.location.origin,
+    redirectTo: redirectWithInvite(),
   });
   if (error) throw new Error(error.message);
 }

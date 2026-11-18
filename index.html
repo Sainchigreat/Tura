@@ -15,9 +15,30 @@
       rel="stylesheet"
     />
     <title>Tura — a course workspace with a pulse</title>
+    <style>
+      /* Painted before React mounts, so a slow bundle never looks broken. */
+      html { background: #f0f6ff; }
+      #root:empty::after {
+        content: 'Loading Tura';
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-family: 'Martian Mono', ui-monospace, monospace;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(17, 17, 24, 0.5);
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <p style="font-family: sans-serif; padding: 2rem; color: #111118">
+        Tura needs JavaScript enabled to run.
+      </p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

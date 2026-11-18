@@ -77,14 +77,14 @@ function pathToPage(): Page | null {
 function readInvite(): string | null {
   const fromUrl = new URLSearchParams(window.location.search).get('invite');
   if (fromUrl) {
-    window.sessionStorage.setItem(INVITE_KEY, fromUrl);
+    window.localStorage.setItem(INVITE_KEY, fromUrl);
     return fromUrl;
   }
-  return window.sessionStorage.getItem(INVITE_KEY);
+  return window.localStorage.getItem(INVITE_KEY);
 }
 
 function clearInvite() {
-  window.sessionStorage.removeItem(INVITE_KEY);
+  window.localStorage.removeItem(INVITE_KEY);
 }
 
 /** Supabase appends #access_token=…&type=signup after an email confirmation. */
@@ -178,7 +178,14 @@ export default function App() {
     if (error) { setAuthError(error); clearAuthHash(); }
     else if (readConfirmation()) setJustConfirmed(true);
 
+    const params = new URLSearchParams(window.location.search);
+    const fromEmail = params.get('from') === 'email';
     const invite = readInvite();
+    if (fromEmail && !invite) {
+      // Supabase only emits access_token for the older confirmation links; either
+      // way the visitor just proved they own the address.
+      setJustConfirmed(true);
+    }
     if (invite) {
       setInviteToken(invite);
       setScreen('invite');
