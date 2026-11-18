@@ -4,11 +4,18 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "rewrites": [
+    { "source": "/health", "destination": "/health.json" },
+    { "source": "/((?!health\\.json).*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/health.json",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
     }
   ]
 }
