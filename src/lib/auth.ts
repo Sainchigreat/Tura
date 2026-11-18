@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { shareOrigin } from './site';
 
 export type AuthMode = 'signin' | 'signup';
 
@@ -19,7 +20,7 @@ function redirectWithInvite(): string {
   const inUrl = new URLSearchParams(window.location.search).get('invite');
   const token = inUrl ?? pending;
   if (token) params.set('invite', token);
-  return `${window.location.origin}/?${params.toString()}`;
+  return `${shareOrigin()}/?${params.toString()}`;
 }
 
 export async function signIn(email: string, password: string) {

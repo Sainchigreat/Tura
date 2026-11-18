@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { getYouTubeEmbedUrl, getYouTubeId } from '../lib/youtube';
+import { inviteUrl, onCanonicalHost } from '../lib/site';
 import type {
   Course,
   CourseInvite,
@@ -804,7 +805,7 @@ function StudentsView(props: WorkspaceProps) {
   }
 
   async function copy(value: string, label: string) {
-    const url = `${window.location.origin}/?invite=${value}`;
+    const url = inviteUrl(value);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(label);
@@ -865,6 +866,12 @@ function StudentsView(props: WorkspaceProps) {
           <button className="btn btn-dark" onClick={() => void invite()} disabled={busy}>
             {busy ? <Loader2 size={17} /> : <Link2 size={17} />} Create invitation link
           </button>
+          {!onCanonicalHost() && (
+            <p className="helper" style={{ background: 'var(--frost)', borderRadius: 14, padding: '10px 14px' }}>
+              You are viewing Tura on a temporary address. Invitation links are written against the
+              public site, so they will still work for your students.
+            </p>
+          )}
           <div style={{ display: 'grid', gap: 8 }}>
             {(invites ?? []).map((row) => (
               <div key={row.id} className="roster-row" style={{ flexWrap: 'wrap', gap: 10 }}>
