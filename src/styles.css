@@ -364,11 +364,11 @@ button { cursor: pointer; border: 0; background: none; }
   align-items: center;
   gap: 7px;
   border-radius: var(--radius-tag);
-  padding: 5px 13px;
+  padding: 6px 14px;
   background: var(--frost);
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -417,7 +417,7 @@ button { cursor: pointer; border: 0; background: none; }
 .field { display: grid; gap: 8px; }
 .field > label, .label {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: rgba(17, 17, 24, 0.66);
@@ -441,7 +441,7 @@ button { cursor: pointer; border: 0; background: none; }
 }
 .input::placeholder, .textarea::placeholder { color: rgba(17, 17, 24, 0.4); }
 
-.helper { font-size: 14px; color: rgba(17, 17, 24, 0.6); letter-spacing: -0.005em; }
+.helper { font-size: 15px; color: rgba(17, 17, 24, 0.6); letter-spacing: -0.005em; }
 .error-text {
   display: flex;
   align-items: flex-start;
@@ -558,9 +558,9 @@ button { cursor: pointer; border: 0; background: none; }
   background: var(--paper);
   color: var(--ink);
   border-radius: var(--radius-tag);
-  padding: 5px 12px;
+  padding: 6px 13px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   box-shadow: 0 2px 0 0 var(--ink);
@@ -578,7 +578,7 @@ button { cursor: pointer; border: 0; background: none; }
   flex-wrap: wrap;
   gap: 8px 16px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.02em;
   color: rgba(17, 17, 24, 0.6);
   text-transform: uppercase;
@@ -769,7 +769,7 @@ button { cursor: pointer; border: 0; background: none; }
 .nav-item .nav-count {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   opacity: 0.7;
 }
 
@@ -813,7 +813,7 @@ button { cursor: pointer; border: 0; background: none; }
   display: grid;
   gap: 6px;
 }
-.stat small { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: rgba(17, 17, 24, 0.6); }
+.stat small { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; color: rgba(17, 17, 24, 0.6); }
 .stat strong { font-size: 34px; font-weight: 400; letter-spacing: -0.03em; line-height: 1; }
 
 .row-list { display: grid; gap: 12px; }
@@ -831,7 +831,7 @@ button { cursor: pointer; border: 0; background: none; }
 }
 .row-item:hover { border-color: var(--ink); }
 .row-item strong { font-size: 17px; font-weight: 400; letter-spacing: -0.012em; display: block; }
-.row-item small { font-size: 13px; color: rgba(17, 17, 24, 0.6); }
+.row-item small { font-size: 14px; color: rgba(17, 17, 24, 0.6); }
 .row-item .row-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
 /* course room */
@@ -873,7 +873,7 @@ button { cursor: pointer; border: 0; background: none; }
   font-size: 15px;
 }
 .lesson-info { padding: 20px 22px 22px; background: var(--paper); display: grid; gap: 14px; }
-.lesson-info .lesson-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(17, 17, 24, 0.56); }
+.lesson-info .lesson-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(17, 17, 24, 0.56); }
 .lesson-info h2 { font-size: 26px; font-weight: 400; letter-spacing: -0.024em; line-height: 1.15; }
 .lesson-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 
@@ -883,7 +883,7 @@ button { cursor: pointer; border: 0; background: none; }
   align-items: center;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: rgba(17, 17, 24, 0.6);
@@ -904,7 +904,7 @@ button { cursor: pointer; border: 0; background: none; }
 .module-top .chev { transition: transform 0.16s ease; }
 .module-top[data-open='false'] .chev { transform: rotate(-90deg); }
 .module-top span { flex: 1; }
-.module-top small { font-family: var(--font-mono); font-size: 10px; color: rgba(17, 17, 24, 0.5); }
+.module-top small { font-family: var(--font-mono); font-size: 12px; color: rgba(17, 17, 24, 0.5); }
 .lesson-row {
   display: flex;
   align-items: center;

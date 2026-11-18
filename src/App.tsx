@@ -87,6 +87,12 @@ function clearInvite() {
   window.sessionStorage.removeItem(INVITE_KEY);
 }
 
+/** Supabase appends #access_token=…&type=signup after an email confirmation. */
+function readConfirmation(): boolean {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return hash.get('type') === 'signup' && Boolean(hash.get('access_token'));
+}
+
 export default function App() {
   const [ready, setReady] = useState(!isConfigured ? true : false);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -109,6 +115,7 @@ export default function App() {
   const [joining, setJoining] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [authError, setAuthError] = useState('');
+  const [justConfirmed, setJustConfirmed] = useState(false);
 
   const notify = useCallback((message: string) => {
     setToastMessage(message);
@@ -169,6 +176,7 @@ export default function App() {
     let mounted = true;
     const error = readAuthError();
     if (error) { setAuthError(error); clearAuthHash(); }
+    else if (readConfirmation()) setJustConfirmed(true);
 
     const invite = readInvite();
     if (invite) {
@@ -425,6 +433,39 @@ export default function App() {
             <Loader2 size={16} /> Syncing your workspace
           </div>
         )}
+        {toastMessage && <div className="toast">{toastMessage}</div>}
+      </>
+    );
+  }
+
+  if (justConfirmed && !profile) {
+    return (
+      <>
+        <Ticker items={TICKER} />
+        <div className="invite-shell">
+          <div className="invite-card fade-up" style={{ maxWidth: 620 }}>
+            <div className="invite-body">
+              <span className="tag tag--green">Email confirmed</span>
+              <h1>You are verified.</h1>
+              <p className="lede" style={{ color: 'rgba(17,17,24,0.7)' }}>
+                {inviteToken
+                  ? 'One last step: sign in and the course you were invited to will be added to your workspace automatically.'
+                  : 'Your account is ready. Sign in to open your workspace.'}
+              </p>
+              <div className="btn-row">
+                <button
+                  className="btn btn-primary btn-lg"
+                  onClick={() => { clearAuthHash(); setJustConfirmed(false); setAuthMode('signin'); setScreen('auth'); }}
+                >
+                  Sign in <ArrowRight size={18} />
+                </button>
+                <button className="btn btn-ghost" onClick={() => { clearAuthHash(); setJustConfirmed(false); navigate('site'); }}>
+                  Back to site
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
         {toastMessage && <div className="toast">{toastMessage}</div>}
       </>
     );

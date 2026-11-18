@@ -295,7 +295,7 @@ function Overview(props: WorkspaceProps) {
                 {!isCreator && (
                   <span style={{ width: 120, display: 'grid', gap: 6 }} className="hide-sm">
                     <span className="progress-line"><span style={{ width: `${percent}%` }} /></span>
-                    <small style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>{percent}%</small>
+                    <small style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>{percent}%</small>
                   </span>
                 )}
                 <ArrowRight size={18} style={{ flex: 'none' }} />
@@ -428,7 +428,7 @@ function CourseList({ courses, isCreator, completed, enrolledIds, onOpenCourse, 
                   {!isCreator && (
                     <div style={{ display: 'grid', gap: 6 }}>
                       <span className="progress-line"><span style={{ width: `${percent}%` }} /></span>
-                      <span className="mono" style={{ fontSize: 10, color: 'rgba(17,17,24,0.55)' }}>{percent}% complete</span>
+                      <span className="mono" style={{ fontSize: 12, color: 'rgba(17,17,24,0.55)' }}>{percent}% complete</span>
                     </div>
                   )}
                   <div className="course-cta">
@@ -666,7 +666,7 @@ function CourseRoom(props: WorkspaceProps & { course: CourseWithContent }) {
                     >
                       <span className="lesson-dot">{done ? <Check size={10} /> : null}</span>
                       <span>{lesson.title}</span>
-                      {lesson.duration && <small className="mono" style={{ fontSize: 9, opacity: 0.6 }}>{lesson.duration}</small>}
+                      {lesson.duration && <small className="mono" style={{ fontSize: 10, opacity: 0.6 }}>{lesson.duration}</small>}
                     </button>
                   );
                 })}
